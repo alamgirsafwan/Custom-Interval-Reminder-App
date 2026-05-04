@@ -40,14 +40,18 @@ export function useReminders() {
     type: ReminderType,
     intervalMinutes?: number, 
     specificTime?: string,
+    specificDate?: string,
+    description?: string,
     soundUrl: string = ''
   ) => {
     const newReminder: Reminder = {
       id: crypto.randomUUID(),
       message,
+      description,
       type,
       intervalMinutes,
       specificTime,
+      specificDate,
       soundUrl,
       isActive: true,
       createdAt: Date.now(),
@@ -64,6 +68,30 @@ export function useReminders() {
 
   const deleteReminder = (id: string) => {
     setReminders(prev => prev.filter(r => r.id !== id));
+  };
+
+  const updateReminder = (
+    id: string,
+    message: string,
+    type: ReminderType,
+    intervalMinutes?: number,
+    specificTime?: string,
+    specificDate?: string,
+    description?: string,
+    soundUrl: string = ''
+  ) => {
+    setReminders(prev => prev.map(r => 
+      r.id === id ? { 
+        ...r, 
+        message, 
+        type, 
+        intervalMinutes, 
+        specificTime, 
+        specificDate, 
+        description, 
+        soundUrl 
+      } : r
+    ));
   };
 
   const updateLastNotified = (id: string, timestamp: number) => {
@@ -98,6 +126,7 @@ export function useReminders() {
       const now = new Date();
       const currentTimestamp = now.getTime();
       const currentHHmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const currentYYYYMMDD = now.toISOString().split('T')[0];
 
       setReminders(prev => {
         let hasChanges = false;
@@ -113,11 +142,21 @@ export function useReminders() {
             }
           } 
           else if (reminder.type === 'specific' && reminder.specificTime) {
-            // Check if it's the exact minute and we haven't notified today for this time
-            const lastNotifiedToday = reminder.lastNotifiedAt && 
-                                    new Date(reminder.lastNotifiedAt).toDateString() === now.toDateString();
+            // Check if it's the exact minute
+            const timeMatch = reminder.specificTime === currentHHmm;
             
-            if (reminder.specificTime === currentHHmm && !lastNotifiedToday) {
+            // Check if date matches (if provided)
+            let dateMatch = true;
+            if (reminder.specificDate) {
+              dateMatch = reminder.specificDate === currentYYYYMMDD;
+            }
+
+            const alreadyNotifiedNow = reminder.lastNotifiedAt && 
+                                      new Date(reminder.lastNotifiedAt).getMinutes() === now.getMinutes() &&
+                                      new Date(reminder.lastNotifiedAt).getHours() === now.getHours() &&
+                                      new Date(reminder.lastNotifiedAt).toDateString() === now.toDateString();
+            
+            if (timeMatch && dateMatch && !alreadyNotifiedNow) {
               notify(reminder);
               hasChanges = true;
             }
@@ -135,6 +174,7 @@ export function useReminders() {
   return {
     reminders,
     addReminder,
+    updateReminder,
     toggleReminder,
     deleteReminder,
     requestPermission,

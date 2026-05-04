@@ -10,15 +10,17 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, BellOff, Plus, Trash2, Play, Clock, Music, CheckCircle2, AlertCircle, CalendarDays, Timer } from 'lucide-react';
+import { Bell, BellOff, Plus, Trash2, Play, Clock, Music, CheckCircle2, AlertCircle, CalendarDays, Timer, Sparkles, Wand2, Loader2, ChevronDown, ChevronUp, Edit3, X } from 'lucide-react';
 import { useReminders } from './useReminders';
 import { SOUND_OPTIONS, APP_NAME, APP_DESCRIPTION } from './constants';
 import { ReminderType } from './types';
+import { generateActionPlan } from './services/geminiService';
 
 export default function App() {
   const { 
     reminders, 
     addReminder, 
+    updateReminder,
     toggleReminder, 
     deleteReminder, 
     requestPermission, 
@@ -27,25 +29,81 @@ export default function App() {
   } = useReminders();
 
   const [isAdding, setIsAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [description, setDescription] = useState('');
   const [type, setType] = useState<ReminderType>('interval');
   const [interval, setInterval] = useState(5);
   const [specificTime, setSpecificTime] = useState('10:00');
+  const [specificDate, setSpecificDate] = useState(new Date().toISOString().split('T')[0]);
   const [soundUrl, setSoundUrl] = useState(SOUND_OPTIONS[0].url);
+  
+  // AI State
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setMessage('');
+    setDescription('');
+    setInterval(5);
+    setSpecificTime('10:00');
+    setSpecificDate(new Date().toISOString().split('T')[0]);
+    setSoundUrl(SOUND_OPTIONS[0].url);
+    setIsAdding(false);
+    setEditId(null);
+    setAiPrompt('');
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) return;
-    addReminder(
-      message, 
-      type, 
-      type === 'interval' ? interval : undefined, 
-      type === 'specific' ? specificTime : undefined, 
-      soundUrl
-    );
-    setMessage('');
-    setInterval(5);
-    setIsAdding(false);
+
+    if (editId) {
+      updateReminder(
+        editId,
+        message,
+        type,
+        type === 'interval' ? interval : undefined,
+        type === 'specific' ? specificTime : undefined,
+        type === 'specific' ? specificDate : undefined,
+        description,
+        soundUrl
+      );
+    } else {
+      addReminder(
+        message, 
+        type, 
+        type === 'interval' ? interval : undefined, 
+        type === 'specific' ? specificTime : undefined, 
+        type === 'specific' ? specificDate : undefined,
+        description,
+        soundUrl
+      );
+    }
+    resetForm();
+  };
+
+  const handleEdit = (reminder: any) => {
+    setMessage(reminder.message);
+    setDescription(reminder.description || '');
+    setType(reminder.type);
+    setInterval(reminder.intervalMinutes || 5);
+    setSpecificTime(reminder.specificTime || '10:00');
+    setSpecificDate(reminder.specificDate || new Date().toISOString().split('T')[0]);
+    setSoundUrl(reminder.soundUrl);
+    setEditId(reminder.id);
+    setIsAdding(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleGenerateAI = async () => {
+    if (!aiPrompt.trim()) return;
+    setIsGenerating(true);
+    const plan = await generateActionPlan(aiPrompt);
+    setDescription(plan);
+    setMessage(aiPrompt);
+    setIsGenerating(false);
   };
 
   return (
@@ -63,11 +121,14 @@ export default function App() {
           </div>
           
           <button 
-            onClick={() => setIsAdding(prev => !prev)}
-            className={`p-2 rounded-full transition-all duration-300 ${isAdding ? 'bg-indigo-100 text-indigo-600 rotate-45' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+            onClick={() => {
+              if (isAdding) resetForm();
+              else setIsAdding(true);
+            }}
+            className={`p-2 rounded-full transition-all duration-300 ${isAdding ? 'bg-red-100 text-red-600 rotate-90' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
             id="toggle-add-btn"
           >
-            <Plus className="w-6 h-6" />
+            {isAdding ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
           </button>
         </div>
       </header>
@@ -109,21 +170,52 @@ export default function App() {
                 id="add-reminder-form"
               >
                 <div className="space-y-4">
-                   <div className="flex p-1 bg-gray-50 rounded-2xl w-full max-w-sm mx-auto">
+                   <div className="flex p-1 bg-gray-50 rounded-2xl w-full max-w-md mx-auto">
                     <button
                       type="button"
                       onClick={() => setType('interval')}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${type === 'interval' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400'}`}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${type === 'interval' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400'}`}
                     >
                       <Timer className="w-4 h-4" /> সময় অন্তর
                     </button>
                     <button
                       type="button"
                       onClick={() => setType('specific')}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${type === 'specific' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400'}`}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${type === 'specific' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400'}`}
                     >
-                      <CalendarDays className="w-4 h-4" /> নির্দিষ্ট সময়
+                      <CalendarDays className="w-4 h-4" /> নির্দিষ্ট সময়/তারিখ
                     </button>
+                  </div>
+
+                  {/* AI Assistance */}
+                  <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                    <div className="flex items-center gap-2 mb-3 text-indigo-700">
+                      <Sparkles className="w-4 h-4" />
+                      <span className="text-xs font-bold uppercase tracking-wider">AI কর্ম পরিকল্পনা</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text"
+                        value={aiPrompt}
+                        onChange={(e) => setAiPrompt(e.target.value)}
+                        placeholder="যেমন: 'ব্যায়াম করতে চাই', 'বই পড়তে চাই'..."
+                        className="flex-1 px-4 py-2 bg-white border border-indigo-100 rounded-xl outline-none text-sm focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGenerateAI}
+                        disabled={isGenerating || !aiPrompt.trim()}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                        তৈরি করুন
+                      </button>
+                    </div>
+                    {description && (
+                      <div className="mt-3 p-3 bg-white rounded-xl border border-indigo-50 text-sm italic text-gray-600 whitespace-pre-wrap">
+                        {description}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -134,40 +226,48 @@ export default function App() {
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="কি মনে করিয়ে দিতে হবে?"
                       className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                      autoFocus
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                      {type === 'interval' ? 'কতো সময় পর পর' : 'কখন'}
+                      {type === 'interval' ? 'কতো সময় পর পর' : 'সময় ও তারিখ'}
                     </label>
-                    <div className="flex items-center gap-3 bg-gray-50 p-1 rounded-xl">
+                    <div className={`flex flex-col gap-2 ${type === 'specific' ? 'bg-transparent' : 'bg-gray-50 p-1 rounded-xl'}`}>
                       {type === 'interval' ? (
-                        <>
-                          <Clock className="w-5 h-5 text-gray-400 ml-3" />
-                          <div className="flex items-center w-full pr-3">
-                            <input 
-                              type="number"
-                              min="1"
-                              value={interval}
-                              onChange={(e) => setInterval(Number(e.target.value))}
-                              className="w-full py-2 bg-transparent outline-none text-indigo-600 font-semibold"
-                            />
-                            <span className="text-xs font-bold text-gray-400">মিনিট</span>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex items-center w-full px-3">
-                           <CalendarDays className="w-5 h-5 text-gray-400 mr-2" />
-                           <input 
-                            type="time"
-                            value={specificTime}
-                            onChange={(e) => setSpecificTime(e.target.value)}
+                        <div className="flex items-center w-full pr-3 py-1">
+                          <Clock className="w-5 h-5 text-gray-400 ml-3 mr-3" />
+                          <input 
+                            type="number"
+                            min="1"
+                            value={interval}
+                            onChange={(e) => setInterval(Number(e.target.value))}
                             className="w-full py-2 bg-transparent outline-none text-indigo-600 font-semibold"
                           />
+                          <span className="text-xs font-bold text-gray-400">মিনিট</span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                           <div className="flex items-center bg-gray-50 p-2 rounded-xl border border-transparent focus-within:border-indigo-500">
+                             <CalendarDays className="w-4 h-4 text-gray-400 mr-2" />
+                             <input 
+                              type="date"
+                              value={specificDate}
+                              onChange={(e) => setSpecificDate(e.target.value)}
+                              className="w-full bg-transparent outline-none text-indigo-600 font-semibold text-xs"
+                            />
+                           </div>
+                           <div className="flex items-center bg-gray-50 p-2 rounded-xl border border-transparent focus-within:border-indigo-500">
+                             <Clock className="w-4 h-4 text-gray-400 mr-2" />
+                             <input 
+                              type="time"
+                              value={specificTime}
+                              onChange={(e) => setSpecificTime(e.target.value)}
+                              className="w-full bg-transparent outline-none text-indigo-600 font-semibold text-xs"
+                            />
+                           </div>
                         </div>
                       )}
                     </div>
@@ -200,8 +300,17 @@ export default function App() {
                   type="submit"
                   className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all transform active:scale-[0.98]"
                 >
-                  রিমাইন্ডার সেট করুন
+                  {editId ? 'রিমাইন্ডার আপডেট করুন' : 'রিমাইন্ডার সেট করুন'}
                 </button>
+                {editId && (
+                  <button 
+                    type="button"
+                    onClick={resetForm}
+                    className="w-full py-3 bg-gray-100 text-gray-500 rounded-2xl font-bold hover:bg-gray-200 transition-all"
+                  >
+                    বাতিল করুন
+                  </button>
+                )}
               </form>
             </motion.div>
           )}
@@ -224,50 +333,79 @@ export default function App() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                className={`group bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between transition-all hover:shadow-md ${!reminder.isActive && 'grayscale opacity-60'}`}
+                className={`group bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex flex-col transition-all hover:shadow-md ${!reminder.isActive && 'grayscale opacity-60'}`}
                 id={`reminder-${reminder.id}`}
               >
-                <div className="flex items-center gap-4">
-                  <button 
-                    onClick={() => toggleReminder(reminder.id)}
-                    className={`p-3 rounded-2xl transition-all ${reminder.isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}
-                  >
-                    {reminder.isActive ? <Bell className="w-6 h-6" /> : <BellOff className="w-6 h-6" />}
-                  </button>
-                  <div>
-                    <h3 className="font-bold text-lg text-gray-900 leading-tight mb-1">{reminder.message}</h3>
-                    <div className="flex items-center gap-3 text-sm font-medium text-gray-500">
-                      <span className="flex items-center gap-1">
-                        {reminder.type === 'interval' ? (
-                          <><Clock className="w-3.5 h-3.5" /> {reminder.intervalMinutes} মিনিট অন্তর</>
-                        ) : (
-                          <><CalendarDays className="w-3.5 h-3.5" /> প্রতিদিন {reminder.specificTime} এ</>
-                        )}
-                      </span>
-                      {reminder.lastNotifiedAt && (
-                        <span className="flex items-center gap-1 text-indigo-500">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> 
-                          শেষ: {new Date(reminder.lastNotifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 flex-1">
+                    <button 
+                      onClick={() => toggleReminder(reminder.id)}
+                      className={`p-3 rounded-2xl transition-all ${reminder.isActive ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}
+                    >
+                      {reminder.isActive ? <Bell className="w-6 h-6" /> : <BellOff className="w-6 h-6" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-lg text-gray-900 leading-tight mb-1 truncate">{reminder.message}</h3>
+                      <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm font-medium text-gray-500">
+                        <span className="flex items-center gap-1">
+                          {reminder.type === 'interval' ? (
+                            <><Clock className="w-3.5 h-3.5" /> {reminder.intervalMinutes} মিনিট অন্তর</>
+                          ) : (
+                            <><CalendarDays className="w-3.5 h-3.5" /> {reminder.specificDate && `${reminder.specificDate} তারিখ `}{reminder.specificTime} এ</>
+                          )}
                         </span>
-                      )}
+                        {reminder.description && (
+                          <button 
+                            onClick={() => setExpandedPlan(expandedPlan === reminder.id ? null : reminder.id)}
+                            className="flex items-center gap-1 text-indigo-600 hover:bg-indigo-50 px-2 py-0.5 rounded-lg"
+                          >
+                            <Sparkles className="w-3 h-3" /> পরিকল্পনা {expandedPlan === reminder.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        )}
+                        {reminder.lastNotifiedAt && (
+                          <span className="flex items-center gap-1 text-indigo-400">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> 
+                            {new Date(reminder.lastNotifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                   <button 
-                    onClick={() => playNotificationSound(reminder.soundUrl)}
-                    className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                  >
-                    <Play className="w-5 h-5" />
-                  </button>
-                  <button 
-                    onClick={() => deleteReminder(reminder.id)}
-                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={() => handleEdit(reminder)}
+                      className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                    >
+                      <Edit3 className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={() => playNotificationSound(reminder.soundUrl)}
+                      className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                    >
+                      <Play className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={() => deleteReminder(reminder.id)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
+                
+                {reminder.description && expandedPlan === reminder.id && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    className="mt-4 pt-4 border-t border-gray-50 text-sm text-gray-600 bg-gray-50/50 p-4 rounded-2xl whitespace-pre-wrap leading-relaxed shadow-inner"
+                  >
+                    <div className="flex items-center gap-2 mb-2 text-indigo-600 font-bold text-xs uppercase">
+                      <Sparkles className="w-3 h-3" /> AI কর্ম পরিকল্পনা
+                    </div>
+                    {reminder.description}
+                  </motion.div>
+                )}
               </motion.div>
             ))}
           </AnimatePresence>
